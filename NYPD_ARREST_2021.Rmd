@@ -1,0 +1,497 @@
+---
+title: "NYPD Activities"
+author: "Anne-Gaelle Songeons"
+output: 
+      rmdformats::downcute:
+        code_folding: hide
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r library, message=FALSE, warning=FALSE, include=FALSE}
+library(viridis)
+library(tidyverse)
+library(pastecs)
+library(leaflet)
+library(ggplot2)
+library(forcats)
+library(tigris)
+```
+
+
+```{r data, message=FALSE, warning=FALSE, include=TRUE}
+
+#LOADING THE DATA
+file_path <- file.path("Data","NYPD_Arrest_Data__Year_to_Date_.csv") #To make sure the code is going to run for every system 
+file_path
+
+NYPD_Arrest <- read.csv(file = file_path, stringsAsFactors = FALSE) #if the user is using an older version of r 
+
+```
+
+```{r data2, message=FALSE, warning=FALSE, include=TRUE}
+#load map
+file_path2 <- file.path("Data","geo_export_973a007b-36dc-4dfb-b474-58657b7086be.shp")
+ny_map <- sf::st_read(dsn = file_path2)
+```
+
+# Research Question 
+
+On December 14, 2021, future New York City Mayor Eric Adams nominated **the first woman and third person of color to head the New York City Police Department: Chief Keechant Sewell**. This decision is historic, especially in a tense American context where many have lost confidence in the police. 
+Often accused of being **poorly trained, of racism and police violence** - we think here of the death of George Floyd in 2020 that shook the United States and the world -, it is a great challenge that awaits the new chief. 
+
+We propose in this report to make a point on the **activities of the police in the city of New York**. 
+For this we will use the data provided by the city of New York. We found a database containing all the arrests of the year 2021 (from January to October) which is available [here](https://data.cityofnewyork.us/Public-Safety/NYPD-Arrest-Data-Year-to-Date-/uip8-fykc). 
+
+
+<br>  
+
+![](https://images.unsplash.com/photo-1493603500863-d1f8f3b2386d?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2340&q=80)
+
+
+
+<p style="font-size: 24pt"> **What is the state of NYPD arrests in 2021?** </p>
+
+To answer our problem we will analyse into consideration two aspects: 
+
+- The daily activities of the policemen
+- The profile of the arrested people 
+
+# Data Description 
+
+
+```{r eval=FALSE, include=FALSE}
+pastecs::stat.desc(NYPD_Arrest) #display main stats about our data
+```
+
+
+```{r cleaning, include=FALSE}
+NYPD_Arrest_Clean  <-  na.omit(NYPD_Arrest) # drop all the rows with at least 1 NA
+  
+NYPD_Arrest_Clean  <-  unique(NYPD_Arrest_Clean) # check if there is duplicate
+
+NYPD_Arrest_Clean <-  dplyr::select(NYPD_Arrest_Clean,
+                                    ARREST_DATE, 
+                                    OFNS_DESC, 
+                                    LAW_CAT_CD, 
+                                    ARREST_BORO,
+                                    AGE_GROUP, 
+                                    PERP_SEX, 
+                                    PERP_RACE, 
+                                    Latitude, 
+                                    Longitude)
+#Select the row we are interested in 
+
+
+#to change the values in the Arrest_Borro column, it will simplify our future analyses
+NYPD_Arrest_Clean$ARREST_BORO[NYPD_Arrest_Clean$ARREST_BORO == 'B'] = 'Bronx'
+NYPD_Arrest_Clean$ARREST_BORO[NYPD_Arrest_Clean$ARREST_BORO == 'K'] = 'Brooklyn'
+NYPD_Arrest_Clean$ARREST_BORO[NYPD_Arrest_Clean$ARREST_BORO == 'M'] = 'Manhattan'
+NYPD_Arrest_Clean$ARREST_BORO[NYPD_Arrest_Clean$ARREST_BORO == 'Q'] = 'Queens'
+NYPD_Arrest_Clean$ARREST_BORO[NYPD_Arrest_Clean$ARREST_BORO == 'S'] = 'Staten Island'
+
+
+
+                     
+```
+
+Our data didn't need much cleaning, we just detected a **problem with missing values**. We decided to delete the rows that had at least one missing value. So we go from `r nrow(NYPD_Arrest)` rows to `r nrow(NYPD_Arrest_Clean)` rows. 
+
+We have selected the columns that will be useful for our analysis to simplify our dataset and change the values in the *ARREST_BORO* column. 
+
+
+
+
+```{r echo=FALSE, fig.width=4}
+
+#display as a table the 5 first rows of our dataset
+knitr::kable(head(NYPD_Arrest_Clean, 5), caption = "Data after cleaning")
+
+```
+
+
+
+# NYPD Daily Activities 
+
+
+## Over the year 
+
+```{r echo=FALSE, fig.align="center", fig.height=8, fig.width=8}
+
+# Reformart the date, and keep only the month 
+NYPD_Arrest_Clean$MONTH <- format(as.Date(NYPD_Arrest_Clean$ARREST_DATE, format = "%m/%d/%Y"), "%m")
+
+
+# Create a subset 
+NYPD_Arrest_bydate  <-  NYPD_Arrest_Clean %>% 
+                        group_by(MONTH) %>% 
+                        summarise(Count = n())
+
+p <- ggplot(NYPD_Arrest_bydate, aes(x=MONTH, y=Count)) + 
+  #We specify here that we want to obtain a lollipop graph
+    geom_segment( aes(x=MONTH, xend=MONTH, y=10000, yend=Count), color="grey") +
+  #We choose the size and the color of the point
+    geom_point(size=20, color="#2B8F59") + 
+  #We reverse the x-axis and y-axis to make the graph more readable
+    scale_x_discrete(labels=c("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP"))+
+  ylim(10000,14000) +
+  #We insert the values at the end of the points
+    geom_text(aes(label=Count), nudge_y = 3, color="white", size=3) +
+  #We choose the title of the graph
+    labs(title = "Count of arrests per month in 2021", size= 3)+
+  #We choose the aesthetic of the graph and remove the names of the axes to avoid overloading 
+  theme_minimal() +
+  theme(
+    axis.title =element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "none", 
+    axis.text.y = element_blank())
+    
+
+p
+```
+
+
+
+On average, the New York Police  make  **`r as.integer(mean(NYPD_Arrest_bydate$Count))` arrests ** per month over the course of 2021. 
+We note that in April the number of arrests is well below this average, the police made `r NYPD_Arrest_bydate[NYPD_Arrest_bydate$MONTH == "04", ][2]` arrests. It is the month where the least number of arrests was recorded. The possibility that this is related to the Covid health crisis is not to be dismissed.
+
+
+
+## By Borough
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+#Create a subset
+NYPD_Arrest_monthboro  <-  NYPD_Arrest_Clean %>% 
+                        group_by(ARREST_BORO, MONTH) %>%  
+                        summarise(Count = n()) %>% 
+                        arrange(Count) %>% 
+                        mutate(ARREST_BORO = fct_reorder(ARREST_BORO, Count))
+        
+
+q <- 
+  ggplot(NYPD_Arrest_monthboro, aes(x = reorder(ARREST_BORO, Count), y =  Count)) +  #plot the data as a boxplot
+  geom_boxplot(aes(fill=ARREST_BORO), color="#37328c", size=0.5)  +
+  
+  #add color on top of it
+  scale_fill_viridis(discrete = T, direction=-1, guide = guide_legend(reverse = TRUE))+
+  
+  #Change the orientation of the graph
+  coord_flip()+
+  
+  scale_x_discrete(labels=c("Staten Island", "Queens",  "Bronx", "Manhattan", "Brooklyn")) + 
+  
+  #Custom the graph to make it clearer
+  theme_minimal() +
+    theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.line = element_line(colour = "white"),
+        legend.position = "none")+
+  labs(x = "", 
+       y = "Number of arrests per month (mean)", 
+       title = "Distribution of arrests by borough per month for 2021"
+  )
+
+q
+
+```
+
+The following graph represents the average number of crimes per month and per neighborhood in New York. There is a **great disparity** between the neighborhoods of New York in terms of crime. 
+**Staten Island is very little concerned** where Brooklyn comes first. 
+
+This can be correlated to the **very different standards of living** in the different parts of the city. Staten Island clearly stands out as the richest of the 5 boroughs and the least populated. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+#subset
+NYPD_Arrest_byboro <- NYPD_Arrest_Clean %>%  
+                        group_by(ARREST_BORO) %>% 
+                        summarise(Count = n()) 
+
+# Merge data
+boro_merged <- geo_join(ny_map, NYPD_Arrest_byboro , "boro_name", "ARREST_BORO")
+
+# color palette + popup 
+pal <- colorNumeric("Blues", domain=boro_merged$Count)
+popup_sb <- paste0("Borough: ", as.character(boro_merged$boro_name), "</br>", 
+                   "Total: ", as.character(boro_merged$Count))
+
+# plot with leaflet
+leaflet(ny_map) %>%
+  addPolygons(
+    fillColor = ~pal(boro_merged$Count),
+    fillOpacity = 1, 
+    stroke = FALSE, 
+    color = 'White',
+    weight = 0.2, 
+    popup = ~popup_sb
+    ) %>%
+  addLegend(pal = pal, 
+            values =  boro_merged$Count, 
+            position = "bottomright", 
+            title = "Total number of arrest in 2021")
+
+```
+
+<style>
+.leaflet-container {
+    background: #F6F5F5!important;
+}
+</style>
+
+## Crime and offence
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+#Create a subset
+NYPD_Arrest_byoffense0  <- NYPD_Arrest_Clean %>% 
+                        group_by(OFNS_DESC) %>% 
+                        summarise(Count = n()) 
+                       
+
+
+# select the offences which are less represented in the dataset
+minorOffense = NYPD_Arrest_byoffense0$OFNS_DESC[NYPD_Arrest_byoffense0$Count < 1000] 
+
+# replace those offenses by "Other"
+# important when we will plot the graph to avoid having to much data
+NYPD_Arrest_Clean[ NYPD_Arrest_Clean$OFNS_DESC  %in% minorOffense,  ]$OFNS_DESC = "OTHERS"
+
+
+# Create the subset we will use for the next graph
+NYPD_Arrest_byoffense  <- NYPD_Arrest_Clean %>%  
+                          group_by(OFNS_DESC) %>% 
+                          summarise(Count = n())  %>% 
+                          arrange(Count) %>% 
+                          mutate(OFNS_DESC=factor(OFNS_DESC, OFNS_DESC))
+
+```
+
+
+
+```{r echo=FALSE, fig.height=11, fig.width=8, message=FALSE, warning=FALSE, fig.align="center"}
+# create a df for the label
+NYPD_Arrest_byoffense$id = seq(1,nrow(NYPD_Arrest_byoffense))
+label_data <- NYPD_Arrest_byoffense 
+ 
+# calculate the angles for the labels
+number_of_bar <- nrow(label_data)
+angle <-  90 - 360 * (label_data$id-0.5)/number_of_bar     
+# calculate the alignment of labels
+label_data$hjust<-ifelse( angle < -90, 1, 0)
+# flip label angle 
+label_data$angle<-ifelse(angle < -90, angle+180, angle)
+
+#plot the graph
+k <- ggplot(NYPD_Arrest_byoffense ) + 
+  geom_bar(aes(x = as.factor(id), y = Count, fill = OFNS_DESC), stat = "identity")  +  
+  
+  # add colors
+  scale_fill_viridis(discrete=T, direction = -1)+
+  
+  # make the plot circular
+  coord_polar() +
+  
+  # define the size of the circle
+  ylim(-10000,40000)+ 
+  
+  #add customization 
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.margin = unit(rep(-3,4), "cm"), 
+    legend.position = "none"
+    ) + 
+  
+  # add the labels
+  geom_text(data=label_data, aes(x=as.factor(id), y=Count+200, label=OFNS_DESC, hjust=hjust), color="black", fontface="bold",alpha=0.6, size=3, angle= label_data$angle, inherit.aes = F )  +
+  
+  # add a title
+  geom_text( aes(x=22, y=-10000, label="Offenses in NYC"), color="black", inherit.aes = FALSE, size = 4) 
+ 
+k
+
+```
+
+
+The illegal acts perpetrated are very diverse, we count not **far from `r nrow(NYPD_Arrest_byoffense0)` categories** on this year. 
+Police officers are **most commonly confronted with third degree assaults and related offenses**. This includes, for example, violent attacks on law enforcement, firefighters, and medical personnel. This phenomenon **represents  `r round(NYPD_Arrest_byoffense$Count[NYPD_Arrest_byoffense$OFNS_DESC == "ASSAULT 3 & RELATED OFFENSES"] * 100/sum(NYPD_Arrest_byoffense$Count), 2)`% of arrests**. 
+
+
+**Where the arrests for assault of third degree took place? **
+</br>
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#subset
+Assault3 <- NYPD_Arrest_Clean %>% 
+  filter(OFNS_DESC == "ASSAULT 3 & RELATED OFFENSES") 
+
+#plot with leaflet
+leaflet( Assault3 ) %>% 
+  addTiles() %>% 
+  addMarkers(lng = Assault3$Longitude , 
+             lat = Assault3$Latitude, 
+             popup = Assault3$ARREST_DATE, 
+             clusterOptions = markerClusterOptions()) 
+
+```
+
+
+
+
+# Profile of the arrested people   
+
+
+
+## Age & Sex
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Subset the data
+NYPD_Arrest_byagesex <-  NYPD_Arrest_Clean %>% 
+                        group_by(AGE_GROUP,PERP_SEX) %>% 
+                        summarise(Count = n()) 
+
+# assign negative values to female in order to have a "miror" of the male 
+NYPD_Arrest_byagesex$Count[NYPD_Arrest_byagesex$PERP_SEX == "F"] = -1*NYPD_Arrest_byagesex$Count
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+x <- ggplot() +
+  
+  # plot the data for the male
+  geom_bar(data = filter(NYPD_Arrest_byagesex, PERP_SEX == 'M'), aes(x = AGE_GROUP,  y = Count, fill = PERP_SEX, alpha = 0.8), stat = "identity") +
+  
+  #plot the data for the female 
+  geom_bar(data = filter(NYPD_Arrest_byagesex, PERP_SEX == 'F'), aes(x = AGE_GROUP,  y = Count, fill = PERP_SEX), stat = "identity") +
+  
+  #change the orientation
+  coord_flip() +
+  
+  # customize the graph
+  theme_minimal() +
+  theme (
+    axis.title = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "none") +
+  labs(y = "Count", x = "Age Band", title = " Age distribution of arrested citizens by gender  ") +
+  scale_fill_manual(values = c("#440154", "#28ae80"))+
+  ylim( -30000, 60000) 
+  
+x
+
+```
+
+Here two things are to be noted: 
+- the **majority of criminal acts are perpetrated by men**
+- And the **most affected age group is the 25/45 years old** 
+
+These are the publics with which the police are most in contact. This is interesting information, because it can allow the police to be more attentive to certain types of people but also in order to **recreate links to know who to communicate with**. 
+
+## Race 
+
+
+```{r echo=FALSE, fig.align="center", fig.height=8, fig.width=8, message=FALSE, warning=FALSE}
+
+# Subset
+NYPD_Arrest_byrace <-  NYPD_Arrest_Clean %>% 
+                        group_by(PERP_RACE) %>% 
+                        summarise(Count = n()) %>%
+                        arrange(desc(Count)) %>% 
+                        mutate(PERP_RACE=factor(PERP_RACE, PERP_RACE))
+
+# create a new column with the percentage 
+NYPD_Arrest_byrace$perc <- NYPD_Arrest_byrace$Count/sum(NYPD_Arrest_byrace$Count)
+
+
+m <- ggplot(data = NYPD_Arrest_byrace, aes(x = PERP_RACE, y=perc))  + 
+  
+  
+  geom_col(aes(fill = perc == max(NYPD_Arrest_byrace$perc))) +  # here we want to have only one column with a specific color 
+  
+  # customization 
+  scale_fill_manual(values = c('grey', '#440154'))+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))+ 
+  theme_minimal() +
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), 
+        legend.position = "none")+
+  labs(
+       title = "Percentage of arrested in 2021 according to their race"
+  ) 
+  
+
+m
+
+```
+
+It is noted that nearly **half of the people** who are arrested in New York City are people **from the Black American community**. This is all the more alarming considering that in 2020 New York City reported only 15 and 20% of people from this community. 
+There is therefore an overrepresentation of these people. 
+
+We can put forward several hypotheses that can explain these figures, such as **poverty and difficult social environments in this community**, which would lead them to commit more crimes later on, but also we take the **discriminations** of the police towards these people in particular. 
+These hypotheses remain to be verified with more robust data. 
+
+
+```{r echo=FALSE, fig.height=10, fig.width=8, message=FALSE, warning=FALSE, fig.align="center"}
+
+#subset 
+
+NYPD_Arrest_byraceboro <-  NYPD_Arrest_Clean %>% 
+                        group_by(ARREST_BORO, PERP_RACE ) %>% 
+                        summarise(Count = n()) %>%
+                        transmute(PERP_RACE , perc = Count/sum(Count), max = max(perc)) #Add a column with the maximum per neighborhood 
+   
+
+m <- ggplot(data = NYPD_Arrest_byraceboro, aes(x = reorder(PERP_RACE, - perc), y=perc))  + # to order the graph 
+  
+  geom_col(aes(fill = perc == NYPD_Arrest_byraceboro$max)) + # choose which column to color, the maximun here 
+  
+  #customization
+  scale_fill_manual(values = c('grey', '#440154'))+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))+  #add percentages to the scale 
+  theme_minimal() +
+  theme(panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), 
+        legend.position = "none")+
+  labs(
+       title = "Percentage of arrested in 2021 according to their race"
+  ) + 
+  
+  # display a graph for each neighborhood
+  facet_wrap( ~ ARREST_BORO, ncol = 1)
+
+m
+
+```
+
+
+What we have demonstrated above applies to all areas of the city. **African American persons are overrepresented**. 
+
+
+# Conclusion 
+
+
+The challenges of policing in New York are great. We have highlighted in this report that there is a **great disparity between New York neighborhoods**, and **alleged differences in treatment according to ethnicity**. 
+This is symptomatic of an America that is more than ever divided on all fronts. 
+
+The police, being part of the daily life of its citizens, has here its role to play to make decrease the crime rate in the city. They can indeed play a role of mediator, and recreate social links.  
+
