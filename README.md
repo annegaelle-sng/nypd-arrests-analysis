@@ -6,7 +6,7 @@
 ## Description
 
 This project was developed in the framework of my Msc in Data Science and Organisational Behavior. 
-It aims to demonstrate our ability to explore and visualize data. 
+It aims to demonstrate our ability to explore and visualize data using R. 
 For this assignment I used data provided by the city of New York, about arrests that take place in the city. 
 
 ## Build with: 
